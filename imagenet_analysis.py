@@ -48,9 +48,12 @@ class ImageNetData(object):
         wnid = self.wnids[classid]
         annotation_file = os.path.join(self.annotation_path, str(wnid), str(wnid) + "_" + str(imageid) + ".xml")
         xmltree = ET.parse(annotation_file)
-        bndbox = xmltree.find("object").find("bndbox")
+        bndboxes = xmltree.find("object").findall("bndbox")
+        result = []
+        for bndbox in bndboxes:
+            result.append([int(it.text) for it in bndbox])
         #[xmin, ymin, xmax, ymax] = [it.text for it in bndbox]
-        return [int(it.text) for it in bndbox]
+        return result
 
     def get_image_files(self, theclass):
         wnid = self.wnids[theclass]
@@ -64,28 +67,30 @@ class ImageNetData(object):
             os.mkdir("output/bounding_box")
         #class_string = self.word[classidx]
         wnid = self.wnids[classidx]
-        if not os.path.exists(wnid):
-            os.mkdir(wnid)
+        if not os.path.exists(os.path.join("output/bounding_box", wnid)):
+            os.mkdir(os.path.join("output/bounding_box", wnid))
 
         image_files = self.get_image_files(classidx)
         bbfiles = []
         for f in image_files:
             try:
-                xmin, ymin, xmax, ymax = self.get_bndbox(classidx, f)
+                bounding_boxes = self.get_bndbox(classidx, f)
             except IOError:
                 #no bounding box
                 #print("no xml found")
                 continue
             bbfiles.append(f)
             im = np.array(Image.open(os.path.join(self.image_path, wnid, wnid+'_'+f+".JPEG")))
-            plt.figure()
+            dpi = 80.
+            plt.figure(figsize=[im.shape[1]/dpi, im.shape[0]/dpi], dpi=dpi)
             plt.imshow(im)
             plt.axis('off')
-            plt.axhspan(ymin, ymax, float(xmin)/im.shape[1], float(xmax)/im.shape[1] ,facecolor='none', edgecolor='red')
-            print(xmin, ymin, xmax, ymax, im.shape)
-            plt.show()
-            if len(bbfiles)>2:
-                break
+            plt.subplots_adjust(0, 0, 1, 1, 0, 0)
+            for xmin, ymin, xmax, ymax in bounding_boxes:
+                plt.axhspan(ymin, ymax, float(xmin)/im.shape[1], float(xmax)/im.shape[1] ,facecolor='none', edgecolor='red')
+            plt.savefig(str(os.path.join("output/bounding_box", wnid, wnid+'_'+f+".png")))
+            #if len(bbfiles)>2:
+                #break
         print("annotated files: %d"%len(bbfiles))
 
     def class_idx_from_wnid(self, wnid):
@@ -94,12 +99,13 @@ class ImageNetData(object):
 
 def main():
     imnet = ImageNetData("ILSVRC2011_devkit-2.0/data/meta.mat", "unpacked", "annotation")
-    #classes = imnet.get_class("hammerhead")
-    aclass = imnet.class_idx_from_wnid("n01440764")
+    classes = imnet.get_class("ambulance")
+    aclass = classes[0]
+    #aclass = imnet.class_idx_from_wnid("n01440764")
     imnet.bounding_box_images(aclass)
-    #rchildren = imnet.get_children(aclass)
-    #for theclass in rchildren:
-        #imnet.bounding_box_images(theclass)
+    rchildren = imnet.get_children(aclass)
+    for theclass in rchildren:
+        imnet.bounding_box_images(theclass)
     tracer()
 
 if __name__ == "__main__":
