@@ -2,6 +2,8 @@ from scipy.io import loadmat
 import numpy as np
 import os
 from glob import glob
+import Image
+import matplotlib.pyplot as plt
 
 import xml.etree.ElementTree as ET
 #import elementtree.ElementTree as ET
@@ -48,35 +50,56 @@ class ImageNetData(object):
         xmltree = ET.parse(annotation_file)
         bndbox = xmltree.find("object").find("bndbox")
         #[xmin, ymin, xmax, ymax] = [it.text for it in bndbox]
-        return [it.text for it in bndbox]
+        return [int(it.text) for it in bndbox]
 
     def get_image_files(self, theclass):
         wnid = self.wnids[theclass]
         files = glob(os.path.join(self.image_path,wnid,wnid+"*"))
-        print(files)
+        filenames = [os.path.basename(f)[:-5] for f in files]
+        numbers = map(lambda f: f.split("_")[1], filenames)
+        return numbers
 
-
-    def bounding_box_images(self, theclass):
-        if not os.path.exists("bounding_box"):
-            os.mkdir("bounding_box")
-        class_string = self.word[theclass]
-        wnid = self.wnids[theclass]
+    def bounding_box_images(self, classidx):
+        if not os.path.exists("output/bounding_box"):
+            os.mkdir("output/bounding_box")
+        #class_string = self.word[classidx]
+        wnid = self.wnids[classidx]
         if not os.path.exists(wnid):
             os.mkdir(wnid)
 
-        self.get_image_files(theclass)
+        image_files = self.get_image_files(classidx)
+        bbfiles = []
+        for f in image_files:
+            try:
+                xmin, ymin, xmax, ymax = self.get_bndbox(classidx, f)
+            except IOError:
+                #no bounding box
+                #print("no xml found")
+                continue
+            bbfiles.append(f)
+            im = np.array(Image.open(os.path.join(self.image_path, wnid, wnid+'_'+f+".JPEG")))
+            plt.figure()
+            plt.imshow(im)
+            plt.axis('off')
+            plt.axhspan(ymin, ymax, float(xmin)/im.shape[1], float(xmax)/im.shape[1] ,facecolor='none', edgecolor='red')
+            print(xmin, ymin, xmax, ymax, im.shape)
+            plt.show()
+            if len(bbfiles)>2:
+                break
+        print("annotated files: %d"%len(bbfiles))
 
+    def class_idx_from_wnid(self, wnid):
+        return np.where(self.wnids==wnid)[0][0]
 
 
 def main():
     imnet = ImageNetData("ILSVRC2011_devkit-2.0/data/meta.mat", "unpacked", "annotation")
-    classes = imnet.get_class("hammerhead")
-    aclass = classes[0]
-    rchildren = imnet.get_children(aclass)
+    #classes = imnet.get_class("hammerhead")
+    aclass = imnet.class_idx_from_wnid("n01440764")
     imnet.bounding_box_images(aclass)
-    for theclass in rchildren:
-        imnet.bounding_box_images(theclass)
-    #imnet.get_bndbox(979, 110)
+    #rchildren = imnet.get_children(aclass)
+    #for theclass in rchildren:
+        #imnet.bounding_box_images(theclass)
     tracer()
 
 if __name__ == "__main__":
