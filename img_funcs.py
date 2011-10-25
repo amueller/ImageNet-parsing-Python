@@ -21,6 +21,8 @@ def grab_bounding_boxes(imgfile, bounding_boxes):
         bbs.append(im.crop(box))
     return bbs
 
+
+
 def collection_mean(images):
     """ input: list of pil images, output mean of images
     converts all images to 512x512 by scaling and padding
@@ -30,7 +32,13 @@ def collection_mean(images):
     for image in images:
         # resize so larger side is 512
         scale_factor = 512. / max(image.size)
-        image = image.resize(np.array(image.size)*scale_factor)
+
+        # we do cases to avoid float problems
+        if image.size[0] > image.size[1]:
+            image = image.resize([512, int(image.size[1] * scale_factor)])
+        else:
+            image = image.resize([int(image.size[1] * scale_factor), 512])
+
         image = np.array(image)/255.
 
         # make square by padding with zeros
@@ -38,9 +46,9 @@ def collection_mean(images):
         up = np.ceil(padding/2.)
         down = np.floor(padding/2.)
         if image.shape[0] > image.shape[1]:
-            padded = np.hstack([np.zeros([image.shape[0], up, 3]),image,np.zeros([image.shape[0], down, 3])])
+            padded = np.hstack([np.zeros([image.shape[0], up, 3]), image,np.zeros([image.shape[0], down, 3])])
         else:
-            padded = np.vstack([np.zeros([up, image.shape[1], 3]),image,np.zeros([down, image.shape[1], 3])])
+            padded = np.vstack([np.zeros([up, image.shape[1], 3]), image,np.zeros([down, image.shape[1], 3])])
 
         resized_images.append(padded)
 
