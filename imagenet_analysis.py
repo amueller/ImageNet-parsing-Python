@@ -3,7 +3,7 @@ import numpy as np
 import os
 from glob import glob
 
-from img_funcs import draw_bounding_boxes, grab_bounding_boxes
+from img_funcs import draw_bounding_boxes, grab_bounding_boxes, collection_mean
 import xml.etree.ElementTree as ET
 #import elementtree.ElementTree as ET
 
@@ -12,7 +12,13 @@ tracer = Tracer()
 
 class ImageNetData(object):
     """ ImageNetData needs path to meta.mat, path to images and path to annotations.
-     The images are assumed to be in folders according to their synsets names """
+     The images are assumed to be in folders according to their synsets names
+
+     Synsets are always handled using their index in the 'synsets' dict. This
+     is their id-1 and is referred to as classidx.
+     Images are handles using their id, which is the number in the file name.
+     These are non-concecutive and therefore called id/imgid.
+     """
     def __init__(self, meta_path, image_path, annotation_path):
         self.image_path = image_path
         self.annotation_path = annotation_path
@@ -23,6 +29,10 @@ class ImageNetData(object):
         self.word = np.squeeze(np.array([x[2] for x in self.synsets]))
         self.num_children = np.squeeze(np.array([x[4] for x in self.synsets]))
         self.children = [np.squeeze(x[5]).astype(np.int) for x in self.synsets]
+
+    def img_path_from_id(self, classidx, imgidx):
+        wnid = self.wnids[classidx]
+        return os.path.join(self.image_path, wnid, wnid+'_'+imgidx+".JPEG")
 
     def get_class(self, search_string):
         indices = np.where([search_string in x[2][0] for x in self.synsets])[0]
@@ -45,8 +55,8 @@ class ImageNetData(object):
                 rchildren.extend(self.get_children(child))
         return rchildren
 
-    def get_bndbox(self, classid, imageid):
-        wnid = self.wnids[classid]
+    def get_bndbox(self, classidx, imageid):
+        wnid = self.wnids[classidx]
         annotation_file = os.path.join(self.annotation_path, str(wnid), str(wnid) + "_" + str(imageid) + ".xml")
         xmltree = ET.parse(annotation_file)
         objects = xmltree.findall("object")
@@ -72,18 +82,18 @@ class ImageNetData(object):
         if not os.path.exists(os.path.join("output/bounding_box", wnid)):
             os.mkdir(os.path.join("output/bounding_box", wnid))
 
-        image_files = self.get_image_ids(classidx)
+        image_ids = self.get_image_ids(classidx)
         bbfiles = []
-        for f in image_files:
+        for imgid in image_ids:
             try:
-                bounding_boxes = self.get_bndbox(classidx, f)
+                bounding_boxes = self.get_bndbox(classidx, imgid)
             except IOError:
                 #no bounding box
                 #print("no xml found")
                 continue
-            bbfiles.append(f)
-            img_path = os.path.join(self.image_path, wnid, wnid+'_'+f+".JPEG")
-            out_path = str(os.path.join("output/bounding_box", wnid, wnid+'_'+f+".png"))
+            bbfiles.append(imgid)
+            img_path = self.img_path_from_id(classidx, imgid)
+            out_path = str(os.path.join("output/bounding_box", wnid, wnid+'_'+imgid+".png"))
             draw_bounding_boxes(img_path, bounding_boxes, out_path)
             #if len(bbfiles)>2:
                 #break
@@ -93,14 +103,18 @@ class ImageNetData(object):
         return np.where(self.wnids==wnid)[0][0]
 
     def all_bounding_boxes(self, classidx):
-        image_files = self.get_image_ids(classidx)
+        image_ids = self.get_image_ids(classidx)
         all_bbs = []
-        for f in image_files:
-            img_bbs = self.get_bndbox(classidx, f)
-
+        for imgid in image_ids:
+            try:
+                img_bbs = self.get_bndbox(classidx, imgid)
+            except IOError:
+                #no bounding box
+                #print("no xml found")
+                continue
+            f = self.img_path_from_id(classidx, imgid)
             all_bbs.extend(grab_bounding_boxes(f, img_bbs))
-            tracer()
-
+        return all_bbs;
 
 
 def main():
@@ -112,7 +126,8 @@ def main():
     #aclass = imnet.class_idx_from_wnid("n01440764")
     #print imnet.synsets[aclass]
     #imnet.bounding_box_images(aclass)
-    imnet.all_bounding_boxes(aclass)
+    bbs = imnet.all_bounding_boxes(aclass)
+    collection_mean(bbs)
 
     #rchildren = imnet.get_children(aclass)
     #for theclass in rchildren:
