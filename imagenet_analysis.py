@@ -2,9 +2,8 @@ from scipy.io import loadmat
 import numpy as np
 import os
 from glob import glob
-import Image
-import matplotlib.pyplot as plt
 
+from img_funcs import draw_bounding_boxes, grab_bounding_boxes
 import xml.etree.ElementTree as ET
 #import elementtree.ElementTree as ET
 
@@ -58,7 +57,7 @@ class ImageNetData(object):
         #[xmin, ymin, xmax, ymax] = [it.text for it in bndbox]
         return result
 
-    def get_image_files(self, theclass):
+    def get_image_ids(self, theclass):
         wnid = self.wnids[theclass]
         files = glob(os.path.join(self.image_path,wnid,wnid+"*"))
         filenames = [os.path.basename(f)[:-5] for f in files]
@@ -73,7 +72,7 @@ class ImageNetData(object):
         if not os.path.exists(os.path.join("output/bounding_box", wnid)):
             os.mkdir(os.path.join("output/bounding_box", wnid))
 
-        image_files = self.get_image_files(classidx)
+        image_files = self.get_image_ids(classidx)
         bbfiles = []
         for f in image_files:
             try:
@@ -83,15 +82,9 @@ class ImageNetData(object):
                 #print("no xml found")
                 continue
             bbfiles.append(f)
-            im = np.array(Image.open(os.path.join(self.image_path, wnid, wnid+'_'+f+".JPEG")))
-            dpi = 80.
-            plt.figure(figsize=[im.shape[1]/dpi, im.shape[0]/dpi], dpi=dpi)
-            plt.imshow(im)
-            plt.axis('off')
-            plt.subplots_adjust(0, 0, 1, 1, 0, 0)
-            for xmin, ymin, xmax, ymax in bounding_boxes:
-                plt.axhspan(ymin, ymax, float(xmin)/im.shape[1], float(xmax)/im.shape[1] ,facecolor='none', edgecolor='red')
-            plt.savefig(str(os.path.join("output/bounding_box", wnid, wnid+'_'+f+".png")))
+            img_path = os.path.join(self.image_path, wnid, wnid+'_'+f+".JPEG")
+            out_path = str(os.path.join("output/bounding_box", wnid, wnid+'_'+f+".png"))
+            draw_bounding_boxes(img_path, bounding_boxes, out_path)
             #if len(bbfiles)>2:
                 #break
         print("annotated files: %d"%len(bbfiles))
@@ -99,18 +92,31 @@ class ImageNetData(object):
     def class_idx_from_wnid(self, wnid):
         return np.where(self.wnids==wnid)[0][0]
 
+    def all_bounding_boxes(self, classidx):
+        image_files = self.get_image_ids(classidx)
+        all_bbs = []
+        for f in image_files:
+            img_bbs = self.get_bndbox(classidx, f)
+
+            all_bbs.extend(grab_bounding_boxes(f, img_bbs))
+            tracer()
+
+
 
 def main():
     # ImageNetData needs path to meta.mat, path to images and path to annotations.
     # The images are assumed to be in folders according to their synsets names
     imnet = ImageNetData("ILSVRC2011_devkit-2.0/data/meta.mat", "unpacked", "annotation")
-    classes = imnet.get_class("automobile")
+    classes = imnet.get_class("ambulance")
     aclass = classes[0]
     #aclass = imnet.class_idx_from_wnid("n01440764")
-    imnet.bounding_box_images(aclass)
-    rchildren = imnet.get_children(aclass)
-    for theclass in rchildren:
-        imnet.bounding_box_images(theclass)
+    #print imnet.synsets[aclass]
+    #imnet.bounding_box_images(aclass)
+    imnet.all_bounding_boxes(aclass)
+
+    #rchildren = imnet.get_children(aclass)
+    #for theclass in rchildren:
+        #imnet.bounding_box_images(theclass)
     tracer()
 
 if __name__ == "__main__":
