@@ -12,6 +12,8 @@ from IPython.core.debugger import Tracer
 tracer = Tracer()
 
 class ImageNetData(object):
+    """ ImageNetData needs path to meta.mat, path to images and path to annotations.
+     The images are assumed to be in folders according to their synsets names """
     def __init__(self, meta_path, image_path, annotation_path):
         self.image_path = image_path
         self.annotation_path = annotation_path
@@ -48,9 +50,10 @@ class ImageNetData(object):
         wnid = self.wnids[classid]
         annotation_file = os.path.join(self.annotation_path, str(wnid), str(wnid) + "_" + str(imageid) + ".xml")
         xmltree = ET.parse(annotation_file)
-        bndboxes = xmltree.find("object").findall("bndbox")
+        objects = xmltree.findall("object")
         result = []
-        for bndbox in bndboxes:
+        for object_iter in objects:
+            bndbox = object_iter.find("bndbox")
             result.append([int(it.text) for it in bndbox])
         #[xmin, ymin, xmax, ymax] = [it.text for it in bndbox]
         return result
@@ -98,8 +101,10 @@ class ImageNetData(object):
 
 
 def main():
+    # ImageNetData needs path to meta.mat, path to images and path to annotations.
+    # The images are assumed to be in folders according to their synsets names
     imnet = ImageNetData("ILSVRC2011_devkit-2.0/data/meta.mat", "unpacked", "annotation")
-    classes = imnet.get_class("ambulance")
+    classes = imnet.get_class("automobile")
     aclass = classes[0]
     #aclass = imnet.class_idx_from_wnid("n01440764")
     imnet.bounding_box_images(aclass)
