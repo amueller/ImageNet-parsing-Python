@@ -1,3 +1,8 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.getenv("HOME"),"python_packages/lib/python2.6/site-packages/"))
+
 from scipy.io import loadmat
 import numpy as np
 import os
@@ -5,10 +10,39 @@ from glob import glob
 
 from img_funcs import draw_bounding_boxes, grab_bounding_boxes
 import xml.etree.ElementTree as ET
+
+from joblib import Memory
+
+memory = Memory("cache")
 #import elementtree.ElementTree as ET
 
-from IPython.core.debugger import Tracer
-tracer = Tracer(colors="LightBG")
+
+@memory.cache
+def cached_bow(files):
+    features = []
+    file_names = []
+    wnids = []
+    counts = []
+
+    for bow_file in files:
+        print("loading %s"%bow_file)
+        bow_structs = loadmat(bow_file)['image_sbow']
+        file_names.extend([str(x[0][0]) for x in bow_structs])
+        bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
+        features.extend(bags_of_words)
+        # if we where interested in the actual words:
+        #words = [struct[0][1][0][0][0] for struct in bow_structs]
+        # there is other stuff in the struct but I don't care at the moment:
+        #x = [struct[0][1][0][0][1] for struct in bow_structs]
+        #y = [struct[0][1][0][0][2] for struct in bow_structs]
+        #scale = [struct[0][1][0][0][3] for struct in bow_structs]
+        #norm = [struct[0][1][0][0][4] for struct in bow_structs]
+        wnid = os.path.basename(bow_file).split(".")[0]
+        wnids.append(wnid)
+        counts.append(len(bags_of_words))
+    features = np.array(features)
+    return features, wnids, counts
+
 
 class ImageNetData(object):
     """ ImageNetData needs path to meta.mat, path to images and path to annotations.
@@ -22,6 +56,7 @@ class ImageNetData(object):
     def __init__(self, meta_path, image_path=None, annotation_path=None, bow_path=None):
         self.image_path = image_path
         self.annotation_path = annotation_path
+        self.meta_path = meta_path
         self.meta_data = loadmat(os.path.join(meta_path, "meta.mat"))
         self.bow_path = bow_path
 
@@ -114,7 +149,7 @@ class ImageNetData(object):
     def class_idx_from_wnid(self, wnid):
         """Get class index in ``self.synset`` from synset id"""
         result = np.where(self.wnids==wnid)
-        if len(result) == 0:
+        if len(result[0]) == 0:
             raise ValueError("Invalid wnid.")
         return result[0][0]
 
@@ -131,6 +166,9 @@ class ImageNetData(object):
             f = self.img_path_from_id(classidx, imgid)
             all_bbs.extend(grab_bounding_boxes(f, img_bbs))
         return all_bbs;
+
+    def load_val_labels(self):
+        return np.loadtxt(os.path.join(self.meta_path, "ILSVRC2010_validation_ground_truth.txt"))
 
     def load_bow(self, dataset="train"):
         """Get bow representation of dataset ``dataset``.
@@ -154,27 +192,18 @@ class ImageNetData(object):
         if len(files) == 0:
             raise ValueError("Could not find any bow files.")
 
-        labels = []
-        features = []
-        file_names = []
+        features, wnids, counts = cached_bow(files)
 
-        for bow_file in files:
-            print("loading %s"%bow_file)
-            bow_structs = loadmat(bow_file)['image_sbow']
-            file_names.extend([str(x[0][0]) for x in bow_structs])
-            bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
-            features.extend(bags_of_words)
-            # if we where interested in the actual words:
-            #words = [struct[0][1][0][0][0] for struct in bow_structs]
-            # there is other stuff in the struct but I don't care at the moment:
-            #x = [struct[0][1][0][0][1] for struct in bow_structs]
-            #y = [struct[0][1][0][0][2] for struct in bow_structs]
-            #scale = [struct[0][1][0][0][3] for struct in bow_structs]
-            #norm = [struct[0][1][0][0][4] for struct in bow_structs]
-            tracer()
-            wnid = os.path.basename(bow_file).split(".")[0]
-            class_idx = self.class_idx_from_wnid(wnid)
-            labels.extend([class_idx] * len(features))
+        if dataset == "train":
+            labels_nested = [[self.class_idx_from_wnid(wnid)] * count for wnid, count in zip(wnids, counts)]
+            labels = np.array([x for l in labels_nested for x in l])
+        elif dataset == "val":
+            labels = self.load_val_labels()
+        elif dataset == "test":
+            labels = None
+        else:
+            raise ValueError("Unknow dataset %s"%dataset)
+
         return features, labels
 
 
@@ -184,7 +213,15 @@ def main():
     #imnet = ImageNetData("ILSVRC2011_devkit-2.0/data", "unpacked", "annotation")
     imnet = ImageNetData("/nfs3group/chlgrp/datasets/ILSVRC2010/devkit-1.0/data",
             bow_path="/nfs3group/chlgrp/datasets/ILSVRC2010")
+
     features, labels = imnet.load_bow()
+    features_val, labels_val = imnet.load_bow('val')
+
+    from IPython.core.debugger import Tracer
+    tracer = Tracer(colors="LightBG")
+    tracer()
+        
+        
 
 if __name__ == "__main__":
     main()
