@@ -3,12 +3,12 @@ import numpy as np
 import os
 from glob import glob
 
-from img_funcs import draw_bounding_boxes, grab_bounding_boxes, collection_mean
+from img_funcs import draw_bounding_boxes, grab_bounding_boxes
 import xml.etree.ElementTree as ET
 #import elementtree.ElementTree as ET
 
 from IPython.core.debugger import Tracer
-tracer = Tracer()
+tracer = Tracer(colors="LightBG")
 
 class ImageNetData(object):
     """ ImageNetData needs path to meta.mat, path to images and path to annotations.
@@ -19,10 +19,12 @@ class ImageNetData(object):
      Images are handles using their id, which is the number in the file name.
      These are non-concecutive and therefore called id/imgid.
      """
-    def __init__(self, meta_path, image_path, annotation_path):
+    def __init__(self, meta_path, image_path=None, annotation_path=None, bow_path=None):
         self.image_path = image_path
         self.annotation_path = annotation_path
-        self.meta_data = loadmat(meta_path)
+        self.meta_data = loadmat(os.path.join(meta_path, "meta.mat"))
+        self.bow_path = bow_path
+
         self.synsets = np.squeeze(self.meta_data['synsets'])
         self.ids = np.squeeze(np.array([x[0] for x in self.synsets]))
         self.wnids = np.squeeze(np.array([x[1] for x in self.synsets]))
@@ -34,13 +36,17 @@ class ImageNetData(object):
         wnid = self.wnids[classidx]
         return os.path.join(self.image_path, wnid, wnid+'_'+imgidx+".JPEG")
 
-    def get_class(self, search_string):
+    def class_idx_from_string(self, search_string):
+        """Get class index from string in class name."""
         indices = np.where([search_string in x[2][0] for x in self.synsets])[0]
         for i in indices:
             print(self.synsets[i])
         return indices
 
     def get_children(self, aclass):
+        """Traverse tree to the leafes. Takes classidx, returns
+        list of all recursive chilren of this class."""
+
         # minus one converts ids into indices in our arrays
         children = self.synsets[aclass][5][0] - 1
 
@@ -56,6 +62,9 @@ class ImageNetData(object):
         return rchildren
 
     def get_bndbox(self, classidx, imageid):
+        """Get bouning box coordinates for image with id ``imageid``
+        in synset given by ``classidx``."""
+
         wnid = self.wnids[classidx]
         annotation_file = os.path.join(self.annotation_path, str(wnid), str(wnid) + "_" + str(imageid) + ".xml")
         xmltree = ET.parse(annotation_file)
@@ -75,6 +84,9 @@ class ImageNetData(object):
         return numbers
 
     def bounding_box_images(self, classidx):
+        """Get list of cut out bounding boxes
+        for a given classidx."""
+
         if not os.path.exists("output/bounding_box"):
             os.mkdir("output/bounding_box")
         #class_string = self.word[classidx]
@@ -100,7 +112,11 @@ class ImageNetData(object):
         print("annotated files: %d"%len(bbfiles))
 
     def class_idx_from_wnid(self, wnid):
-        return np.where(self.wnids==wnid)[0][0]
+        """Get class index in ``self.synset`` from synset id"""
+        result = np.where(self.wnids==wnid)
+        if len(result) == 0:
+            raise ValueError("Invalid wnid.")
+        return result[0][0]
 
     def all_bounding_boxes(self, classidx):
         image_ids = self.get_image_ids(classidx)
@@ -116,23 +132,59 @@ class ImageNetData(object):
             all_bbs.extend(grab_bounding_boxes(f, img_bbs))
         return all_bbs;
 
+    def load_bow(self, dataset="train"):
+        """Get bow representation of dataset ``dataset``.
+        Legal values are ``train``, ``val`` and ``test``.
+
+        Returns
+        -------
+        features : numpy array, shape [n_samples, n_features],
+            containing bow representation of all images in given dataset
+
+        labels : numpy array, shape [n_samples],
+            containing classidx for image labels. (Not available for ``test``)
+        """
+        if not self.bow_path:
+            raise ValueError("You have to specify the path to" 
+                "the bow features in ``bow_path`` to be able"
+                "to load them")
+
+        files = glob(os.path.join(self.bow_path, dataset, "*.sbow.mat"))
+
+        if len(files) == 0:
+            raise ValueError("Could not find any bow files.")
+
+        labels = []
+        features = []
+        file_names = []
+
+        for bow_file in files:
+            print("loading %s"%bow_file)
+            bow_structs = loadmat(bow_file)['image_sbow']
+            file_names.extend([str(x[0][0]) for x in bow_structs])
+            bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
+            features.extend(bags_of_words)
+            # if we where interested in the actual words:
+            #words = [struct[0][1][0][0][0] for struct in bow_structs]
+            # there is other stuff in the struct but I don't care at the moment:
+            #x = [struct[0][1][0][0][1] for struct in bow_structs]
+            #y = [struct[0][1][0][0][2] for struct in bow_structs]
+            #scale = [struct[0][1][0][0][3] for struct in bow_structs]
+            #norm = [struct[0][1][0][0][4] for struct in bow_structs]
+            tracer()
+            wnid = os.path.basename(bow_file).split(".")[0]
+            class_idx = self.class_idx_from_wnid(wnid)
+            labels.extend([class_idx] * len(features))
+        return features, labels
+
 
 def main():
     # ImageNetData needs path to meta.mat, path to images and path to annotations.
     # The images are assumed to be in folders according to their synsets names
-    imnet = ImageNetData("ILSVRC2011_devkit-2.0/data/meta.mat", "unpacked", "annotation")
-    classes = imnet.get_class("ambulance")
-    aclass = classes[0]
-    #aclass = imnet.class_idx_from_wnid("n01440764")
-    #print imnet.synsets[aclass]
-    #imnet.bounding_box_images(aclass)
-    bbs = imnet.all_bounding_boxes(aclass)
-    collection_mean(bbs)
-
-    #rchildren = imnet.get_children(aclass)
-    #for theclass in rchildren:
-        #imnet.bounding_box_images(theclass)
-    tracer()
+    #imnet = ImageNetData("ILSVRC2011_devkit-2.0/data", "unpacked", "annotation")
+    imnet = ImageNetData("/nfs3group/chlgrp/datasets/ILSVRC2010/devkit-1.0/data",
+            bow_path="/nfs3group/chlgrp/datasets/ILSVRC2010")
+    features, labels = imnet.load_bow()
 
 if __name__ == "__main__":
     main()
