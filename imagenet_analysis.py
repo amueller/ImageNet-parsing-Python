@@ -28,8 +28,12 @@ def cached_bow(files):
     for bow_file in files:
         print("loading %s"%bow_file)
         bow_structs = loadmat(bow_file)['image_sbow']
-        file_names.extend([str(x[0][0]) for x in bow_structs])
-        bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
+        if int(scipy.version.version.split(".")[1]) < 10:
+            file_names.extend([str(x[0]._fieldnames) for x in bow_structs])
+            bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
+        else:
+            file_names.extend([str(x[0][0]) for x in bow_structs])
+            bags_of_words = [np.bincount(struct[0][1][0][0][0].ravel(), minlength=1000) for struct in bow_structs]
         features.extend(bags_of_words)
         # if we where interested in the actual words:
         #words = [struct[0][1][0][0][0] for struct in bow_structs]
