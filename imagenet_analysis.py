@@ -3,6 +3,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.getenv("HOME"),"python_packages/lib/python2.6/site-packages/"))
 
+import scipy
 from scipy.io import loadmat
 import numpy as np
 import os
@@ -61,11 +62,21 @@ class ImageNetData(object):
         self.bow_path = bow_path
 
         self.synsets = np.squeeze(self.meta_data['synsets'])
-        self.ids = np.squeeze(np.array([x[0] for x in self.synsets]))
-        self.wnids = np.squeeze(np.array([x[1] for x in self.synsets]))
-        self.word = np.squeeze(np.array([x[2] for x in self.synsets]))
-        self.num_children = np.squeeze(np.array([x[4] for x in self.synsets]))
-        self.children = [np.squeeze(x[5]).astype(np.int) for x in self.synsets]
+
+        if int(scipy.version.version.split(".")[1]) < 10:
+            #['ILSVRC2010_ID', 'WNID', 'words', 'gloss', 'num_children', 'children', 'wordnet_height', 'num_train_images']
+            self.ids = np.squeeze(np.array([x.ILSVRC2010_ID for x in self.synsets]))
+            self.wnids = np.squeeze(np.array([x.WNID for x in self.synsets]))
+            self.word = np.squeeze(np.array([x.words for x in self.synsets]))
+            self.num_children = np.squeeze(np.array([x.num_children for x in self.synsets]))
+            self.children = [np.squeeze(x.children).astype(np.int) for x in self.synsets]
+
+        else:
+            self.ids = np.squeeze(np.array([x[0] for x in self.synsets]))
+            self.wnids = np.squeeze(np.array([x[1] for x in self.synsets]))
+            self.word = np.squeeze(np.array([x[2] for x in self.synsets]))
+            self.num_children = np.squeeze(np.array([x[4] for x in self.synsets]))
+            self.children = [np.squeeze(x[5]).astype(np.int) for x in self.synsets]
 
     def img_path_from_id(self, classidx, imgidx):
         wnid = self.wnids[classidx]
