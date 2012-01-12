@@ -16,8 +16,17 @@ from joblib import Memory
 memory = Memory("cache")
 #import elementtree.ElementTree as ET
 
-from IPython.core.debugger import Tracer
-tracer = Tracer()
+def pad_to(X, n):
+    """Pad a 1-d array of size <= n with zeros to size n."""
+    if X.ndim != 1:
+        raise ValueError("Only 1-d arrays can be padded.")
+    size = X.size
+    if size == n:
+        return X
+    elif size < n:
+        return np.hstack([X, np.zeros((n-size))])
+    else:
+        raise ValueError("Size of X must be smaller or equal to n.")
 
 @memory.cache
 def cached_bow(files):
@@ -29,9 +38,8 @@ def cached_bow(files):
     for bow_file in files:
         print("loading %s"%bow_file)
         bow_structs = loadmat(bow_file, struct_as_record=False)['image_sbow']
-        tracer()
         file_names.extend([str(x[0]._fieldnames) for x in bow_structs])
-        bags_of_words = [np.bincount(struct[0].sbow[0][0].word.ravel(), minlength=1000) for struct in bow_structs]
+        bags_of_words = [pad_to(np.bincount(struct[0].sbow[0][0].word.ravel()), 1000) for struct in bow_structs]
         features.extend(bags_of_words)
         # if we where interested in the actual words:
         #words = [struct[0][1][0][0][0] for struct in bow_structs]
